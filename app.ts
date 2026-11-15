@@ -21,13 +21,14 @@ function requestId(): string {
 
 function sendJson(res: ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}): void {
   const text = body === undefined ? '' : `${JSON.stringify(body)}\n`;
+  const buf = Buffer.from(text, 'utf8');
   res.writeHead(status, {
     'content-type': JSON_TYPE,
-    'content-length': Buffer.byteLength(text),
+    'content-length': buf.length,
     'x-github-request-id': requestId(),
     ...extra,
   });
-  res.end(text);
+  res.end(buf);
 }
 
 function sendRest(res: ServerResponse, result: RestResult): void {
@@ -156,7 +157,9 @@ async function route(forge: Forge, expectedToken: string, req: IncomingMessage, 
   }
 
   if (path === '/api/v3' || path.startsWith('/api/v3/')) {
-    const raw = await readBody(req);
+    // GETs carry no body the router reads; skipping the stream drain keeps
+    // the read benchmark's thousands of keep-alive GETs allocation-light.
+    const raw = method === 'GET' || method === 'HEAD' ? Buffer.alloc(0) : await readBody(req);
     let body: Record<string, unknown> | null = null;
     if (raw.length > 0 && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE')) {
       try {

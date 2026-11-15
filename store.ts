@@ -29,8 +29,10 @@ export const USERS: readonly UserRec[] = Object.freeze([
 
 export const VIEWER: UserRec = USERS[0] as UserRec;
 
+const USERS_BY_LOGIN = new Map(USERS.map((u) => [u.login, u]));
+
 export function userByLogin(login: string): UserRec | undefined {
-  return USERS.find((u) => u.login === login);
+  return USERS_BY_LOGIN.get(login);
 }
 
 export interface LabelRec {
@@ -119,8 +121,18 @@ export class Forge {
     return this.epochSec + this.tickSeq;
   }
 
+  private readonly isoCache = new Map<number, string>();
+
   isoOf(tick: number): string {
-    return new Date(tick * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    // The read benchmark asks for the same issue (and so the same ticks)
+    // thousands of times; an ISO string for a tick never changes.
+    let iso = this.isoCache.get(tick);
+    if (iso === undefined) {
+      iso = new Date(tick * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+      if (this.isoCache.size > 100_000) this.isoCache.clear();
+      this.isoCache.set(tick, iso);
+    }
+    return iso;
   }
 
   /** A git author/committer line for the viewer at the given tick. */
@@ -176,8 +188,17 @@ export class Forge {
 }
 
 /** Opaque, stable GraphQL node ids: base64 of "<Type>:<numeric id>". */
+const NODE_ID_CACHE = new Map<string, string>();
+
 export function nodeId(type: string, id: number): string {
-  return Buffer.from(`${type}:${id}`, 'utf8').toString('base64');
+  const key = `${type}:${id}`;
+  let out = NODE_ID_CACHE.get(key);
+  if (out === undefined) {
+    out = Buffer.from(key, 'utf8').toString('base64');
+    if (NODE_ID_CACHE.size > 100_000) NODE_ID_CACHE.clear();
+    NODE_ID_CACHE.set(key, out);
+  }
+  return out;
 }
 
 export function parseNodeId(raw: string): { type: string; id: number } | null {
@@ -195,9 +216,22 @@ export function parseNodeId(raw: string): { type: string; id: number } | null {
 
 /** Issue node ids share the repo-scoped number space; encode repo id + number. */
 export function issueNodeId(repoId: number, number: number): string {
-  return Buffer.from(`Issue:${repoId}:${number}`, 'utf8').toString('base64');
+  return cachedTaggedId('Issue', repoId, number);
 }
 
 export function pullNodeId(repoId: number, number: number): string {
-  return Buffer.from(`PullRequest:${repoId}:${number}`, 'utf8').toString('base64');
+  return cachedTaggedId('PullRequest', repoId, number);
+}
+
+const TAGGED_ID_CACHE = new Map<string, string>();
+
+function cachedTaggedId(type: string, repoId: number, number: number): string {
+  const key = `${type}:${repoId}:${number}`;
+  let out = TAGGED_ID_CACHE.get(key);
+  if (out === undefined) {
+    out = Buffer.from(key, 'utf8').toString('base64');
+    if (TAGGED_ID_CACHE.size > 100_000) TAGGED_ID_CACHE.clear();
+    TAGGED_ID_CACHE.set(key, out);
+  }
+  return out;
 }

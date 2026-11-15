@@ -25,9 +25,18 @@ export interface RestResult {
 const ok = (status: number, body: unknown, headers?: Record<string, string>): RestResult => ({ status, body, headers });
 const fail = (status: number, message: string): RestResult => ({ status, body: { message } });
 
+const USER_JSON_CACHE = new Map<string, Record<string, unknown>>();
+
 export function userJson(login: string): Record<string, unknown> {
-  const user = userByLogin(login) ?? VIEWER;
-  return { login: user.login, id: user.id, node_id: nodeId('User', user.id), type: 'User', site_admin: false };
+  // Scenario users never change, and the read benchmark embeds the author
+  // object in thousands of identical responses: build each once.
+  let out = USER_JSON_CACHE.get(login);
+  if (out === undefined) {
+    const user = userByLogin(login) ?? VIEWER;
+    out = { login: user.login, id: user.id, node_id: nodeId('User', user.id), type: 'User', site_admin: false };
+    USER_JSON_CACHE.set(login, out);
+  }
+  return out;
 }
 
 export function repoJson(forge: Forge, repo: RepoRec): Record<string, unknown> {
