@@ -387,14 +387,37 @@ export function peelToCommit(store: ObjectStore, sha: string): string | null {
  * fetch "haves"). Returns the object list plus the shallow-boundary commits (included commits
  * that have parents which were cut).
  */
+/** Add a commit's tree closure (the commit excluded) into `into`. */
+function addTreeOf(store: ObjectStore, commitSha: string, into: Set<string>): void {
+  const obj = store.get(commitSha);
+  if (obj === undefined || obj.type !== 'commit') return;
+  const stack = [parseCommit(obj.data).tree];
+  while (stack.length > 0) {
+    const sha = stack.pop() as string;
+    if (into.has(sha)) continue;
+    const entry = store.get(sha);
+    if (entry === undefined) continue;
+    into.add(sha);
+    if (entry.type === 'tree') for (const child of parseTree(entry.data)) stack.push(child.sha);
+  }
+}
+
 export function collectObjects(
   store: ObjectStore,
   tips: readonly string[],
-  opts: { maxDepthCommits?: number; excludeTips?: readonly string[] } = {},
+  opts: { maxDepthCommits?: number; excludeTips?: readonly string[]; shallowHeld?: ReadonlySet<string> } = {},
 ): { objects: string[]; shallowBoundary: string[] } {
   const excluded = new Set<string>();
   if (opts.excludeTips !== undefined) {
-    for (const sha of collectObjects(store, opts.excludeTips).objects) excluded.add(sha);
+    for (const tip of opts.excludeTips) {
+      if (opts.shallowHeld !== undefined && opts.shallowHeld.has(tip)) {
+        // A shallow-held commit: the client holds the commit and its tree, not its history.
+        excluded.add(tip);
+        addTreeOf(store, tip, excluded);
+      } else {
+        for (const sha of collectObjects(store, [tip]).objects) excluded.add(sha);
+      }
+    }
   }
   const seen = new Set<string>();
   const order: string[] = [];

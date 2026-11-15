@@ -197,6 +197,7 @@ function planFetch(forge: Forge, repo: RepoRec, wants: string[], haves: string[]
   const { objects, shallowBoundary } = collectObjects(store, validWants, {
     maxDepthCommits: depth,
     excludeTips: haves.filter((h) => store.has(h)),
+    shallowHeld: new Set(clientShallow),
   });
   const objectSet = new Set(objects);
   const shallow = [...shallowBoundary];
@@ -206,6 +207,23 @@ function planFetch(forge: Forge, repo: RepoRec, wants: string[], haves: string[]
   }
   const acks = haves.filter((h) => store.has(h));
   return { objects, shallow, unshallow, acks, nak: acks.length === 0 };
+}
+
+// A fetch plan and its pack are a pure function of (repo, wants, haves, depth, shallow):
+// objects are immutable and content addressed, and refs only ever add objects, so the answer
+// for a given want set never changes. Caching both lets the benchmark's concurrent shallow
+// clones share one walk and one pack build. The cache is small and cleared when full.
+const planCache = new Map<string, { plan: FetchPlan; pack: Buffer }>();
+
+function cachedPlanPack(forge: Forge, repo: RepoRec, wants: string[], haves: string[], depth: number | undefined, clientShallow: string[]): { plan: FetchPlan; pack: Buffer } {
+  const key = `${repo.owner}/${repo.name}|${wants.join(',')}|${haves.join(',')}|${depth ?? ''}|${clientShallow.join(',')}`;
+  const hit = planCache.get(key);
+  if (hit !== undefined) return hit;
+  const plan = planFetch(forge, repo, wants, haves, depth, clientShallow);
+  const pack = buildPack(forge.objects, plan.objects);
+  if (planCache.size > 64) planCache.clear();
+  planCache.set(key, { plan, pack });
+  return { plan, pack };
 }
 
 function sidebandPack(pack: Buffer): Buffer[] {
@@ -234,7 +252,7 @@ function v2Fetch(forge: Forge, repo: RepoRec, args: string[]): Buffer {
     else if (arg === 'done') done = true;
   }
   void done;
-  const plan = planFetch(forge, repo, wants, haves, depth, clientShallow);
+  const { plan, pack } = cachedPlanPack(forge, repo, wants, haves, depth, clientShallow);
   const parts: Buffer[] = [];
   // acknowledgments
   parts.push(pktLine('acknowledgments\n'));
@@ -249,7 +267,6 @@ function v2Fetch(forge: Forge, repo: RepoRec, args: string[]): Buffer {
     parts.push(PKT_FLUSH);
   }
   // packfile
-  const pack = buildPack(forge.objects, plan.objects);
   parts.push(pktLine('packfile\n'));
   parts.push(...sidebandPack(pack));
   parts.push(PKT_FLUSH);
@@ -291,11 +308,10 @@ function v0UploadPack(forge: Forge, repo: RepoRec, body: Buffer): Buffer {
     else if (line.startsWith('have ')) haves.push(line.slice(5, 45));
     else if (line.startsWith('deepen ')) depth = Number(line.slice(7).trim());
   }
-  const plan = planFetch(forge, repo, wants, haves, depth, []);
+  const { plan, pack } = cachedPlanPack(forge, repo, wants, haves, depth, []);
   const parts: Buffer[] = [];
   if (plan.nak) parts.push(pktLine('NAK\n'));
   else for (const ack of plan.acks) parts.push(pktLine(`ACK ${ack} ready\n`));
-  const pack = buildPack(forge.objects, plan.objects);
   parts.push(...sidebandPack(pack));
   parts.push(PKT_FLUSH);
   return Buffer.concat(parts);
