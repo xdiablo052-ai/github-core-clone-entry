@@ -1,4 +1,6 @@
-![Competition](https://img.shields.io/badge/competition-github--core--clone--01-blue) ![Prize pool](https://img.shields.io/badge/prize%20pool-%24500-green) ![Deadline](https://img.shields.io/badge/deadline-2026--11--21-orange) ![Entries](https://img.shields.io/badge/entries-open-brightgreen)
+[![make.fun · github-core-clone-01](https://make.fun/badge/github-core-clone-01.svg)](https://make.fun/bounty/github-core-clone-01?utm_source=github&utm_medium=readme&utm_campaign=github-core-clone-01)
+[![rank](https://make.fun/badge/github-core-clone-01/xdiablo052-ai/github-core-clone-entry/rank.svg)](https://make.fun/bounty/github-core-clone-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=github-core-clone-01)
+[![reward](https://make.fun/badge/github-core-clone-01/xdiablo052-ai/github-core-clone-entry/reward.svg)](https://make.fun/bounty/github-core-clone-01?utm_source=github&utm_medium=readme&utm_campaign=github-core-clone-01)
 
 # A standalone GitHub-compatible forge
 
